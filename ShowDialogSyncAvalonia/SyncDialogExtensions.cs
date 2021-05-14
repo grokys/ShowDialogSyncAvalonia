@@ -24,7 +24,7 @@ namespace ShowDialogSyncAvalonia
             IntPtr arg1);
 
         [DllImport("/usr/lib/libobjc.dylib", EntryPoint = "objc_msgSend")]
-        private static extern void Void_objc_msgSend_IntPtr(
+        private static extern void Void_objc_msgSend(
             IntPtr receiver,
             IntPtr selector);
 
@@ -49,7 +49,7 @@ namespace ShowDialogSyncAvalonia
 
                 void DialogClosed(object sender, EventArgs e)
                 {
-                    Void_objc_msgSend_IntPtr(sharedApplication, stopModalSelector);
+                    Void_objc_msgSend(sharedApplication, stopModalSelector);
                     window.Closed -= DialogClosed;
                 }
 
