@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
@@ -10,39 +11,63 @@ namespace ShowDialogSyncAvalonia
 {
     public static class SyncDialogExtensions
     {
+        [DllImport("/usr/lib/libobjc.dylib")]
+        private static extern IntPtr objc_getClass(string name);
+        
+        [DllImport("/usr/lib/libobjc.dylib", EntryPoint = "sel_registerName")]
+        private static extern IntPtr GetHandle(string name);
+        
+        [DllImport("/usr/lib/libobjc.dylib", EntryPoint = "objc_msgSend")]
+        private static extern long Int64_objc_msgSend_IntPtr(
+            IntPtr receiver,
+            IntPtr selector,
+            IntPtr arg1);
+
+        [DllImport("/usr/lib/libobjc.dylib", EntryPoint = "objc_msgSend")]
+        private static extern void Void_objc_msgSend_IntPtr(
+            IntPtr receiver,
+            IntPtr selector);
+
+        [DllImport("/usr/lib/libobjc.dylib", EntryPoint = "objc_msgSend")]
+        private static extern IntPtr IntPtr_objc_msgSend(IntPtr receiver, IntPtr selector);
+        
         public static void ShowDialogSync(this Window window, Window owner)
         {
-            if (window.PlatformImpl is IMacOSTopLevelPlatformHandle)
-            {
-
-            }
-            else
-            {
-                using var source = new CancellationTokenSource();
-                window.ShowDialog(owner).ContinueWith(
-                    t => source.Cancel(),
-                    TaskScheduler.FromCurrentSynchronizationContext());
-                Dispatcher.UIThread.MainLoop(source.Token);
-            }
+            window.ShowDialogSync<object>(owner);
         }
 
         [return: MaybeNull]
         public static T ShowDialogSync<T>(this Window window, Window owner)
         {
-            if (window.PlatformImpl is IMacOSTopLevelPlatformHandle)
+            if (window.PlatformImpl.Handle is IMacOSTopLevelPlatformHandle handle)
             {
-                throw new NotImplementedException();
+                var nsAppStaticClass = objc_getClass("NSApplication");
+                var sharedApplicationSelector = GetHandle("sharedApplication");
+                var sharedApplication = IntPtr_objc_msgSend(nsAppStaticClass, sharedApplicationSelector);
+                var runModalForSelector = GetHandle("runModalForWindow:");
+                var stopModalSelector = GetHandle("stopModal");
+
+                void DialogClosed(object sender, EventArgs e)
+                {
+                    Void_objc_msgSend_IntPtr(sharedApplication, stopModalSelector);
+                    window.Closed -= DialogClosed;
+                }
+
+                window.Closed += DialogClosed;
+                var task = window.ShowDialog<T>(owner);
+                Int64_objc_msgSend_IntPtr(sharedApplication, runModalForSelector, handle.NSWindow);
+                return task.Result;
             }
             else
             {
                 using var source = new CancellationTokenSource();
                 var result = default(T);
                 window.ShowDialog<T>(owner).ContinueWith(
-                    t => 
+                    t =>
                     {
                         if (t.IsCompletedSuccessfully)
                             result = t.Result;
-                        source.Cancel(); 
+                        source.Cancel();
                     },
                     TaskScheduler.FromCurrentSynchronizationContext());
                 Dispatcher.UIThread.MainLoop(source.Token);
